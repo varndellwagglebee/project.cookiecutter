@@ -1,0 +1,16 @@
+{
+  "templates": {
+    "aspire-project": {
+      "path": "./aspire-project",
+      "title": "Aspire Project",
+      "description": "A cookiecutter template for an aspire project",
+      "_template": "aspire-project"
+    },
+    "docker-project": {
+      "path": "./docker-project",
+      "title": "Docker Project",
+      "description": "A cookiecutter template for a docker project",
+      "_template": "docker-project"
+    }
+  }
+}
