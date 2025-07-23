@@ -197,43 +197,29 @@ if not COOKIE_FILE.exists():
         "include_azure_application_insights": "{{ cookiecutter.include_azure_application_insights }}",
         "include_azure_storage": "{{ cookiecutter.include_azure_storage }}",
         "include_azure_service_bus": "{{ cookiecutter.include_azure_service_bus }}",
+        
+        "oauth_client_id": "{{ cookiecutter.oauth_client_id }}",
+        "oauth_client_secret": "{{ cookiecutter.oauth_client_secret }}",
+        "oauth_authority": "{{ cookiecutter.oauth_authority }}",
+        "oauth_audience": "{{ cookiecutter.oauth_audience }}",
+        
+        "key_vault_name": "{{ cookiecutter.key_vault_name }}",
+        "key_vault_tenant_id": "{{ cookiecutter.key_vault_tenant_id }}",
+        "key_vault_client_id": "{{ cookiecutter.key_vault_client_id }}",
+        "key_vault_secret_name": "{{ cookiecutter.key_vault_secret_name }}",
+            
+        "app_insights_connection_string": "{{ cookiecutter.app_insights_connection_string }}",
+        
+        "storage_account_name": "{{ cookiecutter.storage_account_name }}",
+        "storage_container_name": "{{ cookiecutter.storage_container_name }}",
+        
+        "service_bus_namespace": "{{ cookiecutter.service_bus_namespace }}",
+        "service_bus_topic": "{{ cookiecutter.service_bus_topic }}",
+        "service_bus_subscription": "{{ cookiecutter.service_bus_subscription }}",
+            
         "template_sha": template_sha,
     }
 
-    # Optional extras
-    if include_oauth:
-        ctx.update({
-            "oauth_client_id": "{{ cookiecutter.oauth_client_id }}",
-            "oauth_client_secret": "{{ cookiecutter.oauth_client_secret }}",
-            "oauth_authority": "{{ cookiecutter.oauth_authority }}",
-            "oauth_audience": "{{ cookiecutter.oauth_audience }}"
-        })
-
-    if include_azure_key_vault:
-        ctx.update({
-            "key_vault_name": "{{ cookiecutter.key_vault_name }}",
-            "key_vault_tenant_id": "{{ cookiecutter.key_vault_tenant_id }}",
-            "key_vault_client_id": "{{ cookiecutter.key_vault_client_id }}",
-            "key_vault_secret_name": "{{ cookiecutter.key_vault_secret_name }}"
-        })
-
-    if include_azure_application_insights:
-        ctx.update({
-            "app_insights_connection_string": "{{ cookiecutter.app_insights_connection_string }}"
-        })
-
-    if include_azure_storage:
-        ctx.update({
-            "storage_account_name": "{{ cookiecutter.storage_account_name }}",
-            "storage_container_name": "{{ cookiecutter.storage_container_name }}"
-        })
-
-    if include_azure_service_bus:
-        ctx.update({
-            "service_bus_namespace": "{{ cookiecutter.service_bus_namespace }}",
-            "service_bus_topic": "{{ cookiecutter.service_bus_topic }}",
-            "service_bus_subscription": "{{ cookiecutter.service_bus_subscription }}"
-        })
 
     ctx = {k: v for k, v in ctx.items() if v not in ("", None)}
     COOKIE_FILE.write_text(json.dumps({"cookiecutter": ctx}, indent=4))
