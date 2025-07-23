@@ -12,11 +12,7 @@ Works both:
 • Non-interactive in CI runners (e.g., GitHub Actions ubuntu-latest)
 """
 from __future__ import annotations
-import json
-import os
-import shutil
-import subprocess
-import sys
+import json, shutil, subprocess, sys, os
 from pathlib import Path
 from typing import Iterable
 
@@ -24,7 +20,7 @@ from typing import Iterable
 # Paths
 # ──────────────────────────────────────────── #
 ROOT = Path.cwd()
-SRC  = ROOT / "src" / "{{ cookiecutter.assembly_name }}"
+SRC = ROOT / "src" / "{{ cookiecutter.assembly_name }}"
 
 # ──────────────────────────────────────────── #
 # Helpers
@@ -49,15 +45,12 @@ def find_git_root(path: Path) -> Path | None:
 
 def read_sha(repo_root: Path) -> str | None:
     try:
-        return subprocess.check_output(
-            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            text=True
-        ).strip()
+        return subprocess.check_output(["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True).strip()
     except subprocess.CalledProcessError:
         return None
 
 # ──────────────────────────────────────────── #
-# User selections from cookiecutter context
+# 1️⃣ Answers
 # ──────────────────────────────────────────── #
 include_azure_key_vault            = _yes("{{ cookiecutter.include_azure_key_vault }}")
 include_azure_application_insights = _yes("{{ cookiecutter.include_azure_application_insights }}")
@@ -73,7 +66,7 @@ template_path                      = "{{ cookiecutter.template_path }}"
 deployment_environment             = "{{ cookiecutter.deployment_environment }}"
 
 # ──────────────────────────────────────────── #
-# 1️⃣ Conditional cleanup
+# 2️⃣ Conditional cleanup
 # ──────────────────────────────────────────── #
 
 # Database
@@ -87,7 +80,7 @@ else:
         ROOT / "src/{{ cookiecutter.assembly_name }}.Migrations/Resources/1000-Initial/CreateSample.sql",
     ])
 
-# Azure Key Vault
+# Azure
 if not include_azure_key_vault:
     rm_each([
         SRC / ".Core/Vault",
@@ -100,27 +93,23 @@ if not include_azure_key_vault:
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Vault"
     ])
 
-# Application Insights
 if not include_azure_application_insights:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Extensions/ApplicationInsightsExtensions.cs",
     ])
 
-# Service Bus
 if not include_azure_service_bus:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Commands/Middleware/CommandMiddlewareTelemetryExtensions.cs",
-        ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Commands/Middleware/TelemetrySourceProvider.cs",
+        ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Commands/Middleware/TelemetrySourceProvider.cs"
     ])
 
-# Audit
 if not include_audit:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Security/SecureAttribute.cs",
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Security/SecurityHelper.cs",
     ])
 
-# OAuth
 if not include_oauth:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Identity/AuthService.cs",
@@ -130,11 +119,10 @@ if not include_oauth:
         ROOT / "src/{{ cookiecutter.assembly_name }}.Data/Abstractions/IAuthService.cs",
     ])
 
-# Always drop template snippets
-rm(ROOT / "templates")
+rm(ROOT / "templates")  # always drop template snippets
 
 # ──────────────────────────────────────────── #
-# 2️⃣ Optional deployment helper
+# 3️⃣ Optional deployment helper
 # ──────────────────────────────────────────── #
 if aspire_deploy and project_path:
     try:
@@ -156,24 +144,22 @@ if aspire_deploy and project_path:
         sys.exit(exc.returncode)
 
 # ──────────────────────────────────────────── #
-# 2️⃣.5️⃣ Capture template SHA – with CI-safe fallback
+# 4️⃣ Capture template SHA – mandatory, but skip in CI
 # ──────────────────────────────────────────── #
-hook_path    = Path(__file__).resolve()
+hook_path = Path(__file__).resolve()
 template_sha: str | None = None
 
-# Try locating .git next to this hook
 git_root = find_git_root(hook_path)
 if git_root:
     template_sha = read_sha(git_root)
 
-# Fallback: check the original _template path
+# fallback via _template replay path
 if template_sha is None:
     template_arg = Path(r"{{ cookiecutter._template }}").expanduser()
     git_root = find_git_root(template_arg)
     if git_root:
         template_sha = read_sha(git_root)
 
-# Only abort locally if no .git found; allow CI to continue
 if template_sha is None:
     if not os.environ.get("CI"):
         print("❌ Template is not a git repository – cancelling project creation.")
@@ -185,7 +171,7 @@ else:
     print(f"🔎 post_gen_project.py location: {hook_path}")
 
 # ──────────────────────────────────────────── #
-# 3️⃣ Persist minimal replay context
+# 5️⃣ Persist minimal replay context
 # ──────────────────────────────────────────── #
 COOKIE_FILE = ROOT / ".cookiecutter.json"
 if not COOKIE_FILE.exists():
@@ -222,10 +208,8 @@ if not COOKIE_FILE.exists():
         "service_bus_namespace": "{{ cookiecutter.service_bus_namespace }}",
         "service_bus_topic": "{{ cookiecutter.service_bus_topic }}",
         "service_bus_subscription": "{{ cookiecutter.service_bus_subscription }}",
-        "template_sha": template_sha or "",
+        "template_sha": template_sha,
     }
-
-    # Remove empty entries and write
     ctx = {k: v for k, v in ctx.items() if v not in ("", None)}
     COOKIE_FILE.write_text(json.dumps({"cookiecutter": ctx}, indent=4))
     print("✅  .cookiecutter.json written (with cookiecutter key)")
