@@ -149,29 +149,29 @@ if aspire_deploy and project_path:
         sys.exit(exc.returncode)
 
 # ──────────────────────────────────────────── #
-# 2️⃣.5️⃣ Capture template SHA – robust
+# 2️⃣.5️⃣ Capture template SHA – mandatory
 # ──────────────────────────────────────────── #
+hook_path = Path(__file__).resolve()
 template_sha: str | None = None
 
-# Check cookiecutter._template path first (for Git URL usage)
-template_arg = Path("{{ cookiecutter._template }}").expanduser()
-git_root = find_git_root(template_arg)
+# Walk upward to find .git folder from current file
+git_root = find_git_root(hook_path)
 if git_root:
     template_sha = read_sha(git_root)
 
-# Fallback to relative .git from this post_gen_script
-if not template_sha:
-    hook_path = Path(__file__).resolve()
-    fallback_root = hook_path.parent.parent
-    git_root = find_git_root(fallback_root)
+# Fallback to using _template path in case of replay file
+if template_sha is None:
+    template_arg = Path(r"{{ cookiecutter._template }}").expanduser()
+    git_root = find_git_root(template_arg)
     if git_root:
         template_sha = read_sha(git_root)
 
-if not template_sha:
+if template_sha is None:
     print("❌ Template is not a git repository – cancelling project creation.")
     sys.exit(1)
 
 print(f"✅ Template commit SHA: {template_sha}")
+print(f"🔎 post_gen_project.py location: {hook_path}")
 
 # ──────────────────────────────────────────── #
 # 3️⃣ Persist minimal replay context
