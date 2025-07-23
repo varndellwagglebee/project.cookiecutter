@@ -5,14 +5,18 @@ It captures the exact Git commit SHA of the template you used, then writes it
 into the generated project's .cookiecutter.json under "template_sha" so future
 template updates can update the project correctly.
 
- ***Aborts generation*** when the template is not a Git repo (no .git).
+ ***Aborts generation*** when the template is not a Git repo (unless running in CI).
 
 Works both:
 • Interactively on dev machines (Windows/macOS/Linux)
 • Non-interactive in CI runners (e.g., GitHub Actions ubuntu-latest)
 """
 from __future__ import annotations
-import json, shutil, subprocess, sys
+import json
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -32,43 +36,41 @@ def rm(item: Path | str) -> None:
         print(f"🗑️  Removed {'dir' if p.is_dir() else 'file'}: {p}")
 
 def rm_each(paths: Iterable[Path | str]) -> None:
-    for p in paths: rm(p)
+    for p in paths:
+        rm(p)
 
 _yes = lambda s: (s or "").strip().lower() == "yes"
 
-def find_git_root(start: Path) -> Path | None:
-    current = start
-    while True:
-        if (current / ".git").exists():
-            return current
-        if current.parent == current:
-            return None       # reached filesystem root
-        current = current.parent
+def find_git_root(path: Path) -> Path | None:
+    for parent in [path] + list(path.parents):
+        if (parent / ".git").exists():
+            return parent
+    return None
 
-def read_sha(repo: Path) -> str | None:
+def read_sha(repo_root: Path) -> str | None:
     try:
         return subprocess.check_output(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
-    except Exception:
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            text=True
+        ).strip()
+    except subprocess.CalledProcessError:
         return None
 
 # ──────────────────────────────────────────── #
-# Answers
+# User selections from cookiecutter context
 # ──────────────────────────────────────────── #
-include_azure_key_vault = _yes("{{ cookiecutter.include_azure_key_vault }}")
-include_azure_application_insights = _yes("{{ cookiecutter.include_azure_application_insights }}")  
-include_azure_storage = _yes("{{ cookiecutter.include_azure_storage }}")
-include_azure_service_bus = _yes("{{ cookiecutter.include_azure_service_bus }}")
-database_is_pg = "{{ cookiecutter.database }}" == "PostgreSql"
-include_audit = _yes("{{ cookiecutter.include_audit }}")
-include_oauth = _yes("{{ cookiecutter.include_oauth }}")
-aspire_deploy = _yes("{{ cookiecutter.aspire_deploy }}")
-github_deployment = _yes("{{ cookiecutter.github_deployment }}")
-project_path = "{{ cookiecutter.project_path }}"
-template_path = "{{ cookiecutter.template_path }}"
-deployment_environment = "{{ cookiecutter.deployment_environment }}"
+include_azure_key_vault            = _yes("{{ cookiecutter.include_azure_key_vault }}")
+include_azure_application_insights = _yes("{{ cookiecutter.include_azure_application_insights }}")
+include_azure_storage              = _yes("{{ cookiecutter.include_azure_storage }}")
+include_azure_service_bus          = _yes("{{ cookiecutter.include_azure_service_bus }}")
+database_is_pg                     = "{{ cookiecutter.database }}" == "PostgreSql"
+include_audit                      = _yes("{{ cookiecutter.include_audit }}")
+include_oauth                      = _yes("{{ cookiecutter.include_oauth }}")
+aspire_deploy                      = _yes("{{ cookiecutter.aspire_deploy }}")
+github_deployment                  = _yes("{{ cookiecutter.github_deployment }}")
+project_path                       = "{{ cookiecutter.project_path }}"
+template_path                      = "{{ cookiecutter.template_path }}"
+deployment_environment             = "{{ cookiecutter.deployment_environment }}"
 
 # ──────────────────────────────────────────── #
 # 1️⃣ Conditional cleanup
@@ -85,7 +87,7 @@ else:
         ROOT / "src/{{ cookiecutter.assembly_name }}.Migrations/Resources/1000-Initial/CreateSample.sql",
     ])
 
-# Azure
+# Azure Key Vault
 if not include_azure_key_vault:
     rm_each([
         SRC / ".Core/Vault",
@@ -98,23 +100,27 @@ if not include_azure_key_vault:
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Vault"
     ])
 
+# Application Insights
 if not include_azure_application_insights:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Extensions/ApplicationInsightsExtensions.cs",
     ])
 
+# Service Bus
 if not include_azure_service_bus:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Commands/Middleware/CommandMiddlewareTelemetryExtensions.cs",
-        ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Commands/Middleware/TelemetrySourceProvider.cs"
+        ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Commands/Middleware/TelemetrySourceProvider.cs",
     ])
 
+# Audit
 if not include_audit:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Security/SecureAttribute.cs",
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Security/SecurityHelper.cs",
     ])
 
+# OAuth
 if not include_oauth:
     rm_each([
         ROOT / "src/{{ cookiecutter.assembly_name }}.Core/Identity/AuthService.cs",
@@ -124,7 +130,8 @@ if not include_oauth:
         ROOT / "src/{{ cookiecutter.assembly_name }}.Data/Abstractions/IAuthService.cs",
     ])
 
-rm(ROOT / "templates")  # always drop template snippets
+# Always drop template snippets
+rm(ROOT / "templates")
 
 # ──────────────────────────────────────────── #
 # 2️⃣ Optional deployment helper
@@ -149,29 +156,33 @@ if aspire_deploy and project_path:
         sys.exit(exc.returncode)
 
 # ──────────────────────────────────────────── #
-# 2️⃣.5️⃣ Capture template SHA – mandatory
+# 2️⃣.5️⃣ Capture template SHA – with CI-safe fallback
 # ──────────────────────────────────────────── #
-hook_path = Path(__file__).resolve()
+hook_path    = Path(__file__).resolve()
 template_sha: str | None = None
 
-# Walk upward to find .git folder from current file
+# Try locating .git next to this hook
 git_root = find_git_root(hook_path)
 if git_root:
     template_sha = read_sha(git_root)
 
-# Fallback to using _template path in case of replay file
+# Fallback: check the original _template path
 if template_sha is None:
     template_arg = Path(r"{{ cookiecutter._template }}").expanduser()
     git_root = find_git_root(template_arg)
     if git_root:
         template_sha = read_sha(git_root)
 
+# Only abort locally if no .git found; allow CI to continue
 if template_sha is None:
-    print("❌ Template is not a git repository – cancelling project creation.")
-    sys.exit(1)
-
-print(f"✅ Template commit SHA: {template_sha}")
-print(f"🔎 post_gen_project.py location: {hook_path}")
+    if not os.environ.get("CI"):
+        print("❌ Template is not a git repository – cancelling project creation.")
+        sys.exit(1)
+    else:
+        print("⚠️  No git repo detected in CI; continuing without template SHA.")
+else:
+    print(f"✅ Template commit SHA: {template_sha}")
+    print(f"🔎 post_gen_project.py location: {hook_path}")
 
 # ──────────────────────────────────────────── #
 # 3️⃣ Persist minimal replay context
@@ -197,30 +208,24 @@ if not COOKIE_FILE.exists():
         "include_azure_application_insights": "{{ cookiecutter.include_azure_application_insights }}",
         "include_azure_storage": "{{ cookiecutter.include_azure_storage }}",
         "include_azure_service_bus": "{{ cookiecutter.include_azure_service_bus }}",
-        
         "oauth_client_id": "{{ cookiecutter.oauth_client_id }}",
         "oauth_client_secret": "{{ cookiecutter.oauth_client_secret }}",
         "oauth_authority": "{{ cookiecutter.oauth_authority }}",
         "oauth_audience": "{{ cookiecutter.oauth_audience }}",
-        
         "key_vault_name": "{{ cookiecutter.key_vault_name }}",
         "key_vault_tenant_id": "{{ cookiecutter.key_vault_tenant_id }}",
         "key_vault_client_id": "{{ cookiecutter.key_vault_client_id }}",
         "key_vault_secret_name": "{{ cookiecutter.key_vault_secret_name }}",
-            
         "app_insights_connection_string": "{{ cookiecutter.app_insights_connection_string }}",
-        
         "storage_account_name": "{{ cookiecutter.storage_account_name }}",
         "storage_container_name": "{{ cookiecutter.storage_container_name }}",
-        
         "service_bus_namespace": "{{ cookiecutter.service_bus_namespace }}",
         "service_bus_topic": "{{ cookiecutter.service_bus_topic }}",
         "service_bus_subscription": "{{ cookiecutter.service_bus_subscription }}",
-            
-        "template_sha": template_sha,
+        "template_sha": template_sha or "",
     }
 
-
+    # Remove empty entries and write
     ctx = {k: v for k, v in ctx.items() if v not in ("", None)}
     COOKIE_FILE.write_text(json.dumps({"cookiecutter": ctx}, indent=4))
     print("✅  .cookiecutter.json written (with cookiecutter key)")
